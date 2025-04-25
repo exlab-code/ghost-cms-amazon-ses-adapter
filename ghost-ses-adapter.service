@@ -3,7 +3,7 @@ Description=Ghost SES Adapter
 After=network.target
 
 [Service]
-ExecStart=/usr/bin/node /path/to/mailgun-to-ses.js
+ExecStart=/usr/bin/node /path/to/ghost-ses-adapter.js
 WorkingDirectory=/path/to/ghost-ses-adapter
 Restart=always
 RestartSec=10

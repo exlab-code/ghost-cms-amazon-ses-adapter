@@ -19,15 +19,13 @@ This adapter works by:
 2. Redirecting those requests to AWS SES
 3. Returning appropriate responses back to Ghost
 
-This is done by changing your DNS settings to redirect Mailgun's domain to your adapter, effectively functioning as a "man-in-the-middle" between Ghost and email services.
-
 ## Prerequisites
 
 - A server running Ghost
 - An AWS account with SES set up
 - Verified email address(es) or domain(s) in SES
 - Node.js (v14 or higher recommended)
-- Basic knowledge of DNS, Nginx and systemd
+- Access to your Ghost database
 
 ## Installation
 
@@ -46,10 +44,9 @@ npm install
 
 ### 3. Configure the adapter
 
-Copy the example config file and edit it:
+Edit the config.json file:
 
 ```bash
-cp config.example.json config.json
 nano config.json
 ```
 
@@ -58,49 +55,96 @@ Update the following values:
 - AWS region where your SES service is set up
 - Default sender email (must be verified in SES)
 
-### 4. Set up Nginx as a proxy
+### 4. Update Ghost database settings
 
-Copy the provided Nginx configuration:
+You need to update the Ghost database to point to your local adapter. Here's a step-by-step guide:
+
+#### Using MySQL command line:
+
+1. Log in to your MySQL server:
+   ```bash
+   mysql -u YOUR_USERNAME -p
+   ```
+   Replace `YOUR_USERNAME` with your MySQL username (often the same as in your Ghost config).
+
+2. Enter your password when prompted.
+
+3. Select your Ghost database:
+   ```sql
+   USE your_ghost_database;
+   ```
+   Replace `your_ghost_database` with your actual Ghost database name (found in your Ghost config.production.json file).
+
+4. Run the update query:
+   ```sql
+   UPDATE settings 
+   SET value = 'http://127.0.0.1:3001/v3' 
+   WHERE `key` = 'mailgun_base_url';
+   ```
+
+5. Verify the update:
+   ```sql
+   SELECT * FROM settings WHERE `key` = 'mailgun_base_url';
+   ```
+
+6. Exit MySQL:
+   ```sql
+   EXIT;
+   ```
+
+#### Using phpMyAdmin (if available):
+
+1. Log in to phpMyAdmin.
+2. Select your Ghost database from the left sidebar.
+3. Click on the "SQL" tab at the top.
+4. Enter the following SQL query:
+   ```sql
+   UPDATE settings 
+   SET value = 'http://127.0.0.1:3001/v3' 
+   WHERE `key` = 'mailgun_base_url';
+   ```
+5. Click "Go" to execute the query.
+6. You can verify the change by browsing to the "settings" table and looking for the "mailgun_base_url" key.
+
+This configuration tells Ghost to send all newsletter requests to your local adapter running on port 3001 instead of the actual Mailgun API.
+
+### 5. Run the adapter
+
+You can run the adapter directly:
 
 ```bash
-sudo cp mailgun-proxy.conf /etc/nginx/sites-available/
-sudo ln -s /etc/nginx/sites-available/mailgun-proxy.conf /etc/nginx/sites-enabled/
+node ghost-ses-adapter.js
 ```
 
-Edit the file to use your SSL certificates:
-
-```bash
-sudo nano /etc/nginx/sites-available/mailgun-proxy.conf
-```
-
-Test and reload Nginx:
-
-```bash
-sudo nginx -t
-sudo systemctl reload nginx
-```
-
-### 5. Set up DNS redirection
-
-Add the following to your `/etc/hosts` file:
-
-```
-127.0.0.1 api.eu.mailgun.net api.mailgun.net
-```
-
-### 6. Create a systemd service
-
-Copy the provided service file:
-
-```bash
-sudo cp ghost-ses-adapter.service /etc/systemd/system/
-```
-
-Edit it to use the correct paths:
+For production use, set up a systemd service:
 
 ```bash
 sudo nano /etc/systemd/system/ghost-ses-adapter.service
 ```
+
+Add the following content:
+
+```
+[Unit]
+Description=Ghost SES Adapter
+After=network.target
+
+[Service]
+ExecStart=/usr/bin/node /path/to/ghost-ses-adapter.js
+WorkingDirectory=/path/to/ghost-ses-adapter
+Restart=always
+RestartSec=10
+StandardOutput=syslog
+StandardError=syslog
+SyslogIdentifier=ghost-ses-adapter
+User=your-user
+Environment=NODE_ENV=production
+
+[Install]
+WantedBy=multi-user.target
+```
+
+Replace `/path/to/ghost-ses-adapter.js` and `/path/to/ghost-ses-adapter` with the actual paths, and `your-user` with your system username.
 
 Enable and start the service:
 
@@ -109,7 +153,7 @@ sudo systemctl enable ghost-ses-adapter
 sudo systemctl start ghost-ses-adapter
 ```
 
-### 7. Configure Ghost to use Mailgun
+### 6. Configure Ghost to use Mailgun
 
 Make sure Ghost is set up to use Mailgun in the admin interface:
 - Go to Settings → Email newsletter
@@ -118,46 +162,55 @@ Make sure Ghost is set up to use Mailgun in the admin interface:
 - Enter your domain
 - Save settings
 
+### 7. Restart Ghost
+
+```bash
+ghost restart
+```
+
 ## Testing
 
 1. Make sure your adapter is running:
    ```bash
    sudo systemctl status ghost-ses-adapter
    ```
-
-2. Check that the proxy is working:
+   
+   Or if running directly with Node.js:
    ```bash
-   curl -k https://api.eu.mailgun.net/health
+   node ghost-ses-adapter.js
    ```
-   You should see an "OK" response.
+
+2. Check that the adapter is responding:
+   ```bash
+   curl http://localhost:3001/health
+   ```
+   You should see a success response.
 
 3. Try sending a test newsletter from Ghost
 
-4. Check the adapter logs:
-   ```bash
-   sudo journalctl -u ghost-ses-adapter
-   ```
+4. Check the adapter logs for any errors
 
 ## Troubleshooting
 
 ### Common Issues
 
-1. **Ghost still tries to use the real Mailgun API**:
-   - Check that your hosts file is correctly configured
-   - Make sure you're using the right Mailgun domain in Ghost settings
-   - Try restarting Ghost to clear any DNS cache
-
-2. **SES authentication errors**:
+1. **SES authentication errors**:
    - Verify your AWS credentials are correct
-   - Check that your IAM user has SES sending permissions
+       that your IAM user has SES sending permissions
 
-3. **"Email address is not verified" errors**:
+2. **"Email address is not verified" errors**:
    - Make sure the sender email is verified in SES
    - Or verify your entire sending domain in SES
 
-4. **Adapter starts but doesn't receive requests**:
-   - Check your Nginx configuration
-   - Verify that port 443 is properly forwarded to the adapter
+3. **Adapter starts but doesn't receive requests**:
+   - Verify the database setting was updated correctly
+   - Make sure the adapter is running on port 3001
+   - Check that Ghost was restarted after the database change
+
+4. **File not found errors during installation**:
+   - Make sure you're using the correct filenames:
+     - The main JavaScript file is `ghost-ses-adapter.js`
+     - The systemd service template is `ghost-ses-adapter.service`
 
 ### Logs
 
@@ -168,12 +221,11 @@ Adjust the `logLevel` in your config.json for more detailed logs:
 
 ## How It Works
 
-1. Ghost tries to send newsletters via Mailgun's API endpoints (api.mailgun.net)
-2. Your hosts file redirects these requests to your local machine
-3. Nginx handles the HTTPS connection and forwards to your adapter
-4. The adapter receives the request, extracts the email details
-5. The adapter sends the email via AWS SES
-6. The adapter returns a success response to Ghost
+1. Ghost tries to send newsletters via what it thinks is the Mailgun API
+2. The database configuration redirects these requests to localhost:3001
+3. The adapter receives the request, extracts the email details
+4. The adapter sends the email via AWS SES
+5. The adapter returns a success response to Ghost
 
 ## Security Considerations
 
