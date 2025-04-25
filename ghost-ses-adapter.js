@@ -97,51 +97,76 @@ app.post('/v3/:domain/messages', upload.any(), async (req, res) => {
     const senderEmail = from || config.defaultSender;
     log('normal', `Sending email from ${senderEmail} to ${toAddresses.length} recipients`);
     
-    // Prepare SES parameters
-    const params = {
-      Source: senderEmail,
-      Destination: {
-        ToAddresses: toAddresses
-      },
-      Message: {
-        Subject: {
-          Data: subject || 'No Subject',
-          Charset: 'UTF-8'
-        },
-        Body: {
-          ...(html && {
-            Html: {
-              Data: html,
-              Charset: 'UTF-8'
-            }
-          }),
-          ...(text && {
-            Text: {
-              Data: text,
-              Charset: 'UTF-8'
-            }
-          })
-        }
-      }
-    };
-    
-    // Add optional ReplyTo if available in headers
-    if (req.body['h:Reply-To']) {
-      params.ReplyToAddresses = [req.body['h:Reply-To']];
+    // Split recipients into batches of 50 (SES limit)
+    const batchSize = 50;
+    const batches = [];
+    for (let i = 0; i < toAddresses.length; i += batchSize) {
+      batches.push(toAddresses.slice(i, i + batchSize));
     }
     
-    try {
-      const result = await ses.sendEmail(params).promise();
-      log('normal', `✓ Email sent successfully via SES: ${result.MessageId}`);
+    log('normal', `Splitting into ${batches.length} batches of up to ${batchSize} recipients each`);
+    
+    // Send each batch
+    const results = [];
+    const errors = [];
+    
+    for (let i = 0; i < batches.length; i++) {
+      const batch = batches[i];
       
+      // Prepare SES parameters for this batch
+      const params = {
+        Source: senderEmail,
+        Destination: {
+          ToAddresses: batch
+        },
+        Message: {
+          Subject: {
+            Data: subject || 'No Subject',
+            Charset: 'UTF-8'
+          },
+          Body: {
+            ...(html && {
+              Html: {
+                Data: html,
+                Charset: 'UTF-8'
+              }
+            }),
+            ...(text && {
+              Text: {
+                Data: text,
+                Charset: 'UTF-8'
+              }
+            })
+          }
+        }
+      };
+      
+      // Add optional ReplyTo if available in headers
+      if (req.body['h:Reply-To']) {
+        params.ReplyToAddresses = [req.body['h:Reply-To']];
+      }
+      
+      try {
+        const result = await ses.sendEmail(params).promise();
+        log('normal', `✓ Batch ${i+1}/${batches.length} (${batch.length} recipients) sent successfully via SES: ${result.MessageId}`);
+        results.push(result);
+      } catch (error) {
+        log('normal', `✗ SES Error for batch ${i+1}/${batches.length}: ${error.code} - ${error.message}`);
+        errors.push(error);
+        // Continue with other batches even if one fails
+      }
+    }
+    
+    // Return success if at least one batch was sent successfully
+    if (results.length > 0) {
+      log('normal', `✓ Successfully sent ${results.length} of ${batches.length} batches`);
       return res.status(200).json({
-        id: result.MessageId,
-        message: 'Queued. Thank you.'
+        id: results[0].MessageId,
+        message: `Queued. Thank you. Sent ${results.length} of ${batches.length} batches.`
       });
-    } catch (error) {
-      log('normal', `✗ SES Error: ${error.code} - ${error.message}`);
-      
-      // Return success to Ghost anyway to prevent error pages
+    } else {
+      // All batches failed
+      log('normal', `✗ All ${batches.length} batches failed to send`);
       return res.status(200).json({
         id: `ses-error-${Date.now()}`,
         message: 'Queued. Thank you.'

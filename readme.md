@@ -254,8 +254,16 @@ Adjust the `logLevel` in your config.json for more detailed logs:
 1. Ghost tries to send newsletters via what it thinks is the Mailgun API
 2. The database configuration redirects these requests to localhost:3001
 3. The adapter receives the request, extracts the email details
-4. The adapter sends the email via AWS SES
-5. The adapter returns a success response to Ghost
+4. The adapter automatically splits recipients into batches of 50 (SES limit)
+5. The adapter sends each batch via AWS SES
+6. The adapter returns a success response to Ghost
+
+## Features
+
+- **Automatic Recipient Batching**: Handles newsletters with any number of recipients by automatically splitting them into batches of 50 (the SES limit)
+- **Fault Tolerance**: Continues processing batches even if some fail, ensuring maximum delivery
+- **Detailed Logging**: Provides clear logs about batch processing and delivery status
+- **Simple Setup**: Works with your existing Ghost installation with minimal configuration
 
 ## Security Considerations
 
