@@ -1,0 +1,28 @@
+{
+  "name": "ghost-ses-adapter",
+  "version": "1.0.0",
+  "description": "Adapter to redirect Ghost newsletter emails from Mailgun to AWS SES",
+  "main": "mailgun-to-ses.js",
+  "scripts": {
+    "start": "node mailgun-to-ses.js",
+    "dev": "nodemon mailgun-to-ses.js"
+  },
+  "keywords": [
+    "ghost",
+    "ses",
+    "mailgun",
+    "newsletter",
+    "email"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "aws-sdk": "^2.1489.0",
+    "body-parser": "^1.20.2",
+    "express": "^4.18.2",
+    "multer": "^1.4.5-lts.1"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.1"
+  }
+}

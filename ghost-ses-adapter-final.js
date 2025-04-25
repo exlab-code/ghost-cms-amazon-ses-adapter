@@ -1,0 +1,205 @@
+/**
+ * Ghost to Amazon SES Adapter
+ * 
+ * This adapter intercepts Ghost's Mailgun API calls and redirects them to AWS SES.
+ * It solves the common problem of Mailgun integration issues with Ghost's newsletter sending.
+ */
+
+const express = require('express');
+const multer = require('multer');
+const bodyParser = require('body-parser');
+const AWS = require('aws-sdk');
+const fs = require('fs');
+const path = require('path');
+const app = express();
+
+// Load configuration
+let config = {
+  port: process.env.PORT || 3001,
+  aws: {
+    accessKeyId: process.env.AWS_ACCESS_KEY_ID,
+    secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
+    region: process.env.AWS_REGION || 'us-east-1'
+  },
+  defaultSender: process.env.DEFAULT_SENDER,
+  logLevel: process.env.LOG_LEVEL || 'normal' // 'minimal', 'normal', 'verbose'
+};
+
+// Try to load config from file
+const configPath = path.join(__dirname, 'config.json');
+if (fs.existsSync(configPath)) {
+  try {
+    const fileConfig = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+    // Deep merge for nested properties
+    config = {
+      ...config,
+      ...fileConfig,
+      aws: {
+        ...config.aws,
+        ...(fileConfig.aws || {})
+      }
+    };
+  } catch (error) {
+    console.error('Error loading config file:', error);
+  }
+}
+
+// Initialize SES
+AWS.config.update({
+  accessKeyId: config.aws.accessKeyId,
+  secretAccessKey: config.aws.secretAccessKey,
+  region: config.aws.region
+});
+
+const ses = new AWS.SES({ apiVersion: '2010-12-01' });
+
+// Configure middleware
+const upload = multer();
+app.use(bodyParser.json());
+app.use(bodyParser.urlencoded({ extended: true }));
+
+// Logging utility
+function log(level, message, data = null) {
+  const levels = { minimal: 1, normal: 2, verbose: 3 };
+  const configLevel = levels[config.logLevel] || 2;
+  
+  if (levels[level] <= configLevel) {
+    console.log(message);
+    if (data && configLevel >= 3) {
+      console.log(JSON.stringify(data, null, 2));
+    }
+  }
+}
+
+// Handle email sending endpoint
+app.post('/v3/:domain/messages', upload.any(), async (req, res) => {
+  log('normal', `====== Received newsletter sending request [${new Date().toISOString()}] ======`);
+  log('verbose', 'Headers:', req.headers);
+  log('verbose', 'Body fields:', req.body);
+  log('normal', `Files attached: ${req.files ? req.files.length : 0}`);
+  
+  try {
+    // Extract email details from form data
+    const { from, to, subject, html, text, 'recipient-variables': recipientVars } = req.body;
+    
+    if (!to) {
+      log('normal', 'Error: Missing recipients');
+      return res.status(200).json({ 
+        id: `missing-to-${Date.now()}`,
+        message: 'Queued. Thank you.'
+      });
+    }
+    
+    // Parse recipients
+    const toAddresses = Array.isArray(to) ? to : (typeof to === 'string' ? to.split(',').map(addr => addr.trim()) : [to]);
+    
+    // Use the from address or fall back to config
+    const senderEmail = from || config.defaultSender;
+    log('normal', `Sending email from ${senderEmail} to ${toAddresses.length} recipients`);
+    
+    // Prepare SES parameters
+    const params = {
+      Source: senderEmail,
+      Destination: {
+        ToAddresses: toAddresses
+      },
+      Message: {
+        Subject: {
+          Data: subject || 'No Subject',
+          Charset: 'UTF-8'
+        },
+        Body: {
+          ...(html && {
+            Html: {
+              Data: html,
+              Charset: 'UTF-8'
+            }
+          }),
+          ...(text && {
+            Text: {
+              Data: text,
+              Charset: 'UTF-8'
+            }
+          })
+        }
+      }
+    };
+    
+    // Add optional ReplyTo if available in headers
+    if (req.body['h:Reply-To']) {
+      params.ReplyToAddresses = [req.body['h:Reply-To']];
+    }
+    
+    try {
+      const result = await ses.sendEmail(params).promise();
+      log('normal', `✓ Email sent successfully via SES: ${result.MessageId}`);
+      
+      return res.status(200).json({
+        id: result.MessageId,
+        message: 'Queued. Thank you.'
+      });
+    } catch (error) {
+      log('normal', `✗ SES Error: ${error.code} - ${error.message}`);
+      
+      // Return success to Ghost anyway to prevent error pages
+      return res.status(200).json({
+        id: `ses-error-${Date.now()}`,
+        message: 'Queued. Thank you.'
+      });
+    }
+  } catch (error) {
+    log('normal', `✗ Error processing request: ${error.message}`);
+    
+    // Return success to Ghost anyway
+    return res.status(200).json({
+      id: `error-${Date.now()}`,
+      message: 'Queued. Thank you.'
+    });
+  }
+});
+
+// Handle analytics endpoints
+app.get('/v3/:domain/events', (req, res) => {
+  log('normal', `====== Received analytics request [${new Date().toISOString()}] ======`);
+  log('verbose', 'Query parameters:', req.query);
+  
+  // Return empty events array with pagination structure that Mailgun would return
+  res.status(200).json({
+    items: [],
+    paging: { next: `https://api.eu.mailgun.net/v3/events?limit=${req.query.limit || 300}&page=next_page` }
+  });
+});
+
+// Handle validation endpoint (Ghost sometimes checks this)
+app.get('/v3/:domain/messages', (req, res) => {
+  log('normal', `====== Received validation request [${new Date().toISOString()}] ======`);
+  res.status(200).json({
+    items: []
+  });
+});
+
+// Handle all other requests
+app.all('*', (req, res) => {
+  log('normal', `====== Received ${req.method} ${req.url} [${new Date().toISOString()}] ======`);
+  log('verbose', 'Headers:', req.headers);
+  log('verbose', 'Body:', req.body);
+  log('verbose', 'Query:', req.query);
+  
+  // Return success for all other endpoints
+  res.status(200).json({ message: 'Success' });
+});
+
+// Health check endpoint
+app.get('/health', (req, res) => {
+  res.status(200).send('OK');
+});
+
+// Start the server
+app.listen(config.port, '0.0.0.0', () => {
+  log('minimal', `Ghost-to-SES adapter running at http://0.0.0.0:${config.port}`);
+  log('minimal', `AWS Region: ${config.aws.region}`);
+  if (config.defaultSender) {
+    log('minimal', `Default sender: ${config.defaultSender}`);
+  }
+  log('minimal', `Log level: ${config.logLevel}`);
+});

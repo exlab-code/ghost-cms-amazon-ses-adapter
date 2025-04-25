@@ -1,0 +1,10 @@
+{
+  "port": 3001,
+  "aws": {
+    "accessKeyId": "YOUR_AWS_ACCESS_KEY",
+    "secretAccessKey": "YOUR_AWS_SECRET_KEY",
+    "region": "us-east-1"
+  },
+  "defaultSender": "your-verified-email@example.com",
+  "logLevel": "normal"
+}
