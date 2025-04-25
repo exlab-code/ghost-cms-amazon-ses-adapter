@@ -34,7 +34,7 @@ This is done by changing your DNS settings to redirect Mailgun's domain to your 
 ### 1. Clone or download this repository
 
 ```bash
-git clone https://github.com/yourusername/ghost-ses-adapter.git
+git clone https://github.com/exlab-code/ghost-ses-adapter.git
 cd ghost-ses-adapter
 ```
 
