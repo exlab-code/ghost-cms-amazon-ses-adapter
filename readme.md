@@ -44,6 +44,32 @@ npm install
 
 ### 3. Configure the adapter
 
+#### Getting AWS Credentials
+
+1. Log in to your AWS Management Console
+2. Go to IAM (Identity and Access Management)
+3. Click "Users" → "Create user"
+4. Enter a user name and click "Next"
+5. On the "Set permissions" page, select "Attach policies directly"
+6. Search for and select "AmazonSESFullAccess"
+7. Complete the user creation process
+8. Go to the newly created user
+9. Select the "Security credentials" tab
+10. Click "Create access key"
+11. Select the appropriate use case (usually "Application running outside AWS")
+12. Make note of the Access Key ID and Secret Access Key (you'll only see the secret key once)
+
+#### Setting up SES
+
+1. Go to the SES (Simple Email Service) console
+2. Verify your email address or domain:
+   - For email: Click "Verified identities" → "Create identity" → "Email address"
+   - For domain: Click "Verified identities" → "Create identity" → "Domain"
+3. Follow the verification steps (email confirmation or DNS records)
+4. If your account is in the SES sandbox, you'll also need to verify recipient email addresses
+
+#### Update Configuration
+
 Edit the config.json file:
 
 ```bash
@@ -51,9 +77,10 @@ nano config.json
 ```
 
 Update the following values:
-- AWS access key and secret key with SES permissions
-- AWS region where your SES service is set up
-- Default sender email (must be verified in SES)
+- `aws.accessKeyId`: Your AWS Access Key ID
+- `aws.secretAccessKey`: Your AWS Secret Access Key
+- `aws.region`: The AWS region where your SES service is set up (e.g., "us-east-1", "eu-west-1")
+- `defaultSender`: Your verified email address in SES (must be verified)
 
 ### 4. Update Ghost database settings
 
@@ -160,7 +187,10 @@ Make sure Ghost is set up to use Mailgun in the admin interface:
 - Select Mailgun
 - Enter any value for the API key (it's not used but required)
 - Enter your domain
+- Under "Email info" → "Sender email address", enter an email address that is verified in SES
 - Save settings
+
+**Important**: The sender email address must be verified in Amazon SES or belong to a verified domain in SES. Without this, you will encounter "Email address is not verified" errors when sending newsletters.
 
 ### 7. Restart Ghost
 
@@ -196,7 +226,7 @@ ghost restart
 
 1. **SES authentication errors**:
    - Verify your AWS credentials are correct
-       that your IAM user has SES sending permissions
+   - Check that your IAM user has SES sending permissions
 
 2. **"Email address is not verified" errors**:
    - Make sure the sender email is verified in SES
