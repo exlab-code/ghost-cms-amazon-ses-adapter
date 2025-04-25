@@ -265,6 +265,35 @@ Adjust the `logLevel` in your config.json for more detailed logs:
 - **Detailed Logging**: Provides clear logs about batch processing and delivery status
 - **Simple Setup**: Works with your existing Ghost installation with minimal configuration
 
+## Limitations and Considerations
+
+### Analytics and Tracking
+
+This adapter has some important limitations compared to Mailgun:
+
+- **No Built-in Analytics**: SES doesn't provide simple API calls for tracking opens, clicks, and bounces like Mailgun does
+- **No Event Tracking**: The adapter doesn't implement event tracking, so Ghost's email analytics will show no data
+- **Complex Integration**: Getting SES events into Ghost would require setting up event publishing with SNS or CloudWatch and additional development
+
+### When to Use This Adapter
+
+This adapter is ideal for:
+- Smaller publications where email analytics are not critical
+- Blogs and newsletters where delivery is more important than tracking
+- Users who want to leverage AWS SES pricing and deliverability benefits
+
+You might want to stick with Mailgun if:
+- You rely heavily on open rates, click tracking, and other email analytics
+- You need detailed reporting on newsletter performance
+- You manage a large publication where subscriber engagement metrics are essential
+
+### Future Enhancements
+
+Potential future improvements could include:
+- Basic SNS integration for bounce handling
+- CloudWatch integration for basic analytics
+- A companion adapter for processing SES events and feeding them back to Ghost
+
 ## Security Considerations
 
 - This adapter doesn't implement authentication since it runs locally
