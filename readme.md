@@ -273,7 +273,6 @@ This adapter has some important limitations compared to Mailgun:
 
 - **No Built-in Analytics**: SES doesn't provide simple API calls for tracking opens, clicks, and bounces like Mailgun does
 - **No Event Tracking**: The adapter doesn't implement event tracking, so Ghost's email analytics will show no data
-- **Complex Integration**: Getting SES events into Ghost would require setting up event publishing with SNS or CloudWatch and additional development
 
 ### When to Use This Adapter
 
