@@ -62,11 +62,16 @@ npm install
 #### Setting up SES
 
 1. Go to the SES (Simple Email Service) console
-2. Verify your email address or domain:
+2. **Important**: Make sure you're in the correct AWS region - your verified identities must be in the same region as specified in your config
+3. Verify your email address or domain:
    - For email: Click "Verified identities" → "Create identity" → "Email address"
    - For domain: Click "Verified identities" → "Create identity" → "Domain"
-3. Follow the verification steps (email confirmation or DNS records)
-4. If your account is in the SES sandbox, you'll also need to verify recipient email addresses
+4. Follow the verification steps (email confirmation or DNS records)
+5. **SES Sandbox vs Production Mode**:
+   - **Sandbox Mode** (default): You can only send emails to verified email addresses
+   - **Production Mode**: You can send emails to any address
+   - To move out of sandbox mode, go to "Account dashboard" → "Request production access"
+   - For newsletter sending, you'll likely need production mode unless all your subscribers are verified
 
 #### Update Configuration
 
@@ -231,13 +236,19 @@ ghost restart
 2. **"Email address is not verified" errors**:
    - Make sure the sender email is verified in SES
    - Or verify your entire sending domain in SES
+   - Ensure verified identities are in the same AWS region as your config
 
-3. **Adapter starts but doesn't receive requests**:
+3. **Emails don't send to subscribers**:
+   - Check if your SES account is still in sandbox mode
+   - In sandbox mode, you can only send to verified email addresses
+   - Request production access through the SES console to send to any email address
+
+4. **Adapter starts but doesn't receive requests**:
    - Verify the database setting was updated correctly
    - Make sure the adapter is running on port 3001
    - Check that Ghost was restarted after the database change
 
-4. **File not found errors during installation**:
+5. **File not found errors during installation**:
    - Make sure you're using the correct filenames:
      - The main JavaScript file is `ghost-ses-adapter.js`
      - The systemd service template is `ghost-ses-adapter.service`
