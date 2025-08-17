@@ -113,31 +113,34 @@ app.post('/v3/:domain/messages', upload.any(), async (req, res) => {
     for (let i = 0; i < batches.length; i++) {
       const batch = batches[i];
       
-      // Prepare SES parameters for this batch
+      // Prepare SES SendBulkEmail parameters for this batch
+      // Each recipient gets their own destination for privacy
+      const destinations = batch.map(email => ({
+        Destination: {
+          ToAddresses: [email]
+        }
+      }));
+      
       const params = {
         Source: senderEmail,
-        Destination: {
-          ToAddresses: batch
-        },
-        Message: {
+        Destinations: destinations,
+        TemplateContent: {
           Subject: {
             Data: subject || 'No Subject',
             Charset: 'UTF-8'
           },
-          Body: {
-            ...(html && {
-              Html: {
-                Data: html,
-                Charset: 'UTF-8'
-              }
-            }),
-            ...(text && {
-              Text: {
-                Data: text,
-                Charset: 'UTF-8'
-              }
-            })
-          }
+          ...(html && {
+            Html: {
+              Data: html,
+              Charset: 'UTF-8'
+            }
+          }),
+          ...(text && {
+            Text: {
+              Data: text,
+              Charset: 'UTF-8'
+            }
+          })
         }
       };
       
@@ -147,11 +150,53 @@ app.post('/v3/:domain/messages', upload.any(), async (req, res) => {
       }
       
       try {
-        const result = await ses.sendEmail(params).promise();
-        log('normal', `✓ Batch ${i+1}/${batches.length} (${batch.length} recipients) sent successfully via SES: ${result.MessageId}`);
+        // Use individual sendEmail calls for maximum privacy and compatibility
+        const batchResults = [];
+        for (const destination of destinations) {
+          const emailParams = {
+            Source: senderEmail,
+            Destination: destination.Destination,
+            Message: {
+              Subject: params.TemplateContent.Subject,
+              Body: {
+                ...(params.TemplateContent.Html && { Html: params.TemplateContent.Html }),
+                ...(params.TemplateContent.Text && { Text: params.TemplateContent.Text })
+              }
+            }
+          };
+          
+          if (params.ReplyToAddresses) {
+            emailParams.ReplyToAddresses = params.ReplyToAddresses;
+          }
+          
+          try {
+            const emailResult = await ses.sendEmail(emailParams).promise();
+            batchResults.push({ MessageId: emailResult.MessageId });
+          } catch (emailError) {
+            batchResults.push({ Error: emailError.message });
+          }
+        }
+        
+        const result = { BulkEmailEntryResults: batchResults };
+        
+        // Check individual email results in the bulk response
+        const bulkResults = result.BulkEmailEntryResults || [];
+        let successCount = 0;
+        let failCount = 0;
+        
+        bulkResults.forEach((entryResult, idx) => {
+          if (entryResult.MessageId) {
+            successCount++;
+          } else if (entryResult.Error) {
+            failCount++;
+            log('normal', `✗ Individual email failed for ${batch[idx]}: ${entryResult.Error}`);
+          }
+        });
+        
+        log('normal', `✓ Batch ${i+1}/${batches.length}: ${successCount} sent, ${failCount} failed via SES Bulk`);
         results.push(result);
       } catch (error) {
-        log('normal', `✗ SES Error for batch ${i+1}/${batches.length}: ${error.code} - ${error.message}`);
+        log('normal', `✗ SES Bulk Error for batch ${i+1}/${batches.length}: ${error.code} - ${error.message}`);
         errors.push(error);
         // Continue with other batches even if one fails
       }

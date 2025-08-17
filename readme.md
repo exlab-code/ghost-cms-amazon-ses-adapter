@@ -261,9 +261,22 @@ Adjust the `logLevel` in your config.json for more detailed logs:
 ## Features
 
 - **Automatic Recipient Batching**: Handles newsletters with any number of recipients by automatically splitting them into batches of 50 (the SES limit)
+- **Individual Email Delivery**: Uses individual `sendEmail` calls instead of bulk operations for maximum compatibility with SES v1 API
 - **Fault Tolerance**: Continues processing batches even if some fail, ensuring maximum delivery
 - **Detailed Logging**: Provides clear logs about batch processing and delivery status
 - **Simple Setup**: Works with your existing Ghost installation with minimal configuration
+
+## Technical Implementation
+
+### Batching Process Fix
+
+The adapter handles large recipient lists by:
+
+1. **Splitting recipients into batches of 50** (SES API limit)
+2. **Using individual `sendEmail` calls** instead of `sendBulkEmail` for compatibility with SES v1 API
+3. **Processing each recipient separately** within each batch to avoid API errors
+
+This approach ensures compatibility with all SES API versions and provides better error handling per recipient.
 
 ## Limitations and Considerations
 
