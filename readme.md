@@ -75,17 +75,34 @@ npm install
 
 #### Update Configuration
 
-Edit the config.json file:
+Set the required environment variables:
 
 ```bash
-nano config.json
+export AWS_ACCESS_KEY_ID="your-access-key-id"
+export AWS_SECRET_ACCESS_KEY="your-secret-access-key"
+export AWS_REGION="us-east-1"
+export DEFAULT_SENDER="your-verified-email@example.com"
 ```
 
-Update the following values:
-- `aws.accessKeyId`: Your AWS Access Key ID
-- `aws.secretAccessKey`: Your AWS Secret Access Key
-- `aws.region`: The AWS region where your SES service is set up (e.g., "us-east-1", "eu-west-1")
-- `defaultSender`: Your verified email address in SES (must be verified)
+All available environment variables:
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `AWS_ACCESS_KEY_ID` | Your AWS Access Key ID | (required) |
+| `AWS_SECRET_ACCESS_KEY` | Your AWS Secret Access Key | (required) |
+| `AWS_REGION` | AWS region for SES | `us-east-1` |
+| `DEFAULT_SENDER` | Verified SES sender email | (required) |
+| `PORT` | Port the adapter listens on | `3001` |
+| `HOST` | Hostname/IP to bind to | `0.0.0.0` |
+| `LOG_LEVEL` | Log verbosity (`minimal`, `normal`, `verbose`) | `normal` |
+
+To restrict the adapter to localhost only (recommended when running on the same server as Ghost):
+
+```bash
+HOST=127.0.0.1 node ghost-ses-adapter.js
+```
+
+A `config.json.example` file is included for reference.
 
 ### 4. Update Ghost database settings
 
@@ -171,6 +188,11 @@ StandardError=syslog
 SyslogIdentifier=ghost-ses-adapter
 User=your-user
 Environment=NODE_ENV=production
+Environment=AWS_ACCESS_KEY_ID=your-access-key-id
+Environment=AWS_SECRET_ACCESS_KEY=your-secret-access-key
+Environment=AWS_REGION=us-east-1
+Environment=DEFAULT_SENDER=your-verified-email@example.com
+Environment=HOST=127.0.0.1
 
 [Install]
 WantedBy=multi-user.target
@@ -255,7 +277,7 @@ ghost restart
 
 ### Logs
 
-Adjust the `logLevel` in your config.json for more detailed logs:
+Adjust the `LOG_LEVEL` environment variable for more detailed logs:
 - `minimal`: Only startup and errors
 - `normal`: Request summaries and outcomes (default)
 - `verbose`: Full request details including headers and bodies
@@ -320,7 +342,7 @@ Potential future improvements could include:
 ## Security Considerations
 
 - This adapter doesn't implement authentication since it runs locally
-- AWS credentials are stored in the config file, so ensure proper file permissions
+- AWS credentials are passed via environment variables — avoid hardcoding them in scripts
 - The adapter doesn't validate incoming requests since they should only come from your Ghost instance
 
 ## Contributing

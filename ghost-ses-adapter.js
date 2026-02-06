@@ -9,12 +9,11 @@ const express = require('express');
 const multer = require('multer');
 const bodyParser = require('body-parser');
 const AWS = require('aws-sdk');
-const fs = require('fs');
-const path = require('path');
 const app = express();
 
 // Load configuration
-let config = {
+const config = {
+  host: process.env.HOST || '0.0.0.0',
   port: process.env.PORT || 3001,
   aws: {
     accessKeyId: process.env.AWS_ACCESS_KEY_ID,
@@ -24,25 +23,6 @@ let config = {
   defaultSender: process.env.DEFAULT_SENDER,
   logLevel: process.env.LOG_LEVEL || 'normal' // 'minimal', 'normal', 'verbose'
 };
-
-// Try to load config from file
-const configPath = path.join(__dirname, 'config.json');
-if (fs.existsSync(configPath)) {
-  try {
-    const fileConfig = JSON.parse(fs.readFileSync(configPath, 'utf8'));
-    // Deep merge for nested properties
-    config = {
-      ...config,
-      ...fileConfig,
-      aws: {
-        ...config.aws,
-        ...(fileConfig.aws || {})
-      }
-    };
-  } catch (error) {
-    console.error('Error loading config file:', error);
-  }
-}
 
 // Initialize SES
 AWS.config.update({
@@ -265,8 +245,8 @@ app.get('/health', (req, res) => {
 });
 
 // Start the server
-app.listen(config.port, '0.0.0.0', () => {
-  log('minimal', `Ghost-to-SES adapter running at http://0.0.0.0:${config.port}`);
+app.listen(config.port, config.host, () => {
+  log('minimal', `Ghost-to-SES adapter running at http://${config.host}:${config.port}`);
   log('minimal', `AWS Region: ${config.aws.region}`);
   if (config.defaultSender) {
     log('minimal', `Default sender: ${config.defaultSender}`);
