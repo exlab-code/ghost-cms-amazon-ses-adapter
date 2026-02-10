@@ -100,6 +100,8 @@ app.post('/v3/:domain/messages', upload.any(), async (req, res) => {
           ToAddresses: [email]
         }
       }));
+     
+      log('normal', `✓ Sending batch ${batch.join(", ")}`);
       
       const params = {
         Source: senderEmail,
@@ -186,7 +188,7 @@ app.post('/v3/:domain/messages', upload.any(), async (req, res) => {
     if (results.length > 0) {
       log('normal', `✓ Successfully sent ${results.length} of ${batches.length} batches`);
       return res.status(200).json({
-        id: results[0].MessageId,
+        id: results[0].MessageId ?? results[0].BulkEmailEntryResults[0].MessageId,
         message: `Queued. Thank you. Sent ${results.length} of ${batches.length} batches.`
       });
     } else {
