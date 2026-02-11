@@ -64,8 +64,8 @@ app.post('/v3/:domain/messages', upload.any(), async (req, res) => {
     
     if (!to) {
       log('normal', 'Error: Missing recipients');
-      return res.status(200).json({ 
-        id: `missing-to-${Date.now()}`,
+      return res.status(200).json({
+        id: `<missing-to-${Date.now()}>`,
         message: 'Queued. Thank you.'
       });
     }
@@ -185,15 +185,20 @@ app.post('/v3/:domain/messages', upload.any(), async (req, res) => {
     // Return success if at least one batch was sent successfully
     if (results.length > 0) {
       log('normal', `✓ Successfully sent ${results.length} of ${batches.length} batches`);
+      // Extract the first successful MessageId from bulk results
+      // Ghost's MailgunEmailProvider calls .trim() on the id, so it must be a string
+      const firstMessageId = results
+        .flatMap(r => r.BulkEmailEntryResults || [])
+        .find(entry => entry.MessageId)?.MessageId || `ses-${Date.now()}`;
       return res.status(200).json({
-        id: results[0].MessageId,
+        id: `<${firstMessageId}>`,
         message: `Queued. Thank you. Sent ${results.length} of ${batches.length} batches.`
       });
     } else {
       // All batches failed
       log('normal', `✗ All ${batches.length} batches failed to send`);
       return res.status(200).json({
-        id: `ses-error-${Date.now()}`,
+        id: `<ses-error-${Date.now()}>`,
         message: 'Queued. Thank you.'
       });
     }
@@ -202,7 +207,7 @@ app.post('/v3/:domain/messages', upload.any(), async (req, res) => {
     
     // Return success to Ghost anyway
     return res.status(200).json({
-      id: `error-${Date.now()}`,
+      id: `<error-${Date.now()}>`,
       message: 'Queued. Thank you.'
     });
   }
