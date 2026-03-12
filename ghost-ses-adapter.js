@@ -51,6 +51,17 @@ function log(level, message, data = null) {
   }
 }
 
+// Replace Mailgun-style %recipient.xyz% template variables with per-recipient values
+function replaceRecipientVariables(content, recipientEmail, recipientVarsMap) {
+  if (!content || !recipientVarsMap || !recipientVarsMap[recipientEmail]) {
+    return content;
+  }
+  const vars = recipientVarsMap[recipientEmail];
+  return content.replace(/%recipient\.([^%]+)%/g, (match, key) => {
+    return vars[key] !== undefined ? vars[key] : match;
+  });
+}
+
 // Handle email sending endpoint
 app.post('/v3/:domain/messages', upload.any(), async (req, res) => {
   log('normal', `====== Received newsletter sending request [${new Date().toISOString()}] ======`);
@@ -73,6 +84,16 @@ app.post('/v3/:domain/messages', upload.any(), async (req, res) => {
     // Parse recipients
     const toAddresses = Array.isArray(to) ? to : (typeof to === 'string' ? to.split(',').map(addr => addr.trim()) : [to]);
     
+    // Parse recipient variables for template substitution
+    let recipientVarsMap = {};
+    if (recipientVars) {
+      try {
+        recipientVarsMap = typeof recipientVars === 'string' ? JSON.parse(recipientVars) : recipientVars;
+      } catch (e) {
+        log('normal', `Warning: Failed to parse recipient-variables: ${e.message}`);
+      }
+    }
+
     // Use the from address or fall back to config
     const senderEmail = from || config.defaultSender;
     log('normal', `Sending email from ${senderEmail} to ${toAddresses.length} recipients`);
@@ -133,14 +154,27 @@ app.post('/v3/:domain/messages', upload.any(), async (req, res) => {
         // Use individual sendEmail calls for maximum privacy and compatibility
         const batchResults = [];
         for (const destination of destinations) {
+          const recipientEmail = destination.Destination.ToAddresses[0];
+
+          // Substitute %recipient.xyz% variables for this recipient
+          const personalizedSubject = replaceRecipientVariables(
+            params.TemplateContent.Subject.Data, recipientEmail, recipientVarsMap
+          );
+          const personalizedHtml = params.TemplateContent.Html
+            ? replaceRecipientVariables(params.TemplateContent.Html.Data, recipientEmail, recipientVarsMap)
+            : null;
+          const personalizedText = params.TemplateContent.Text
+            ? replaceRecipientVariables(params.TemplateContent.Text.Data, recipientEmail, recipientVarsMap)
+            : null;
+
           const emailParams = {
             Source: senderEmail,
             Destination: destination.Destination,
             Message: {
-              Subject: params.TemplateContent.Subject,
+              Subject: { Data: personalizedSubject, Charset: 'UTF-8' },
               Body: {
-                ...(params.TemplateContent.Html && { Html: params.TemplateContent.Html }),
-                ...(params.TemplateContent.Text && { Text: params.TemplateContent.Text })
+                ...(personalizedHtml && { Html: { Data: personalizedHtml, Charset: 'UTF-8' } }),
+                ...(personalizedText && { Text: { Data: personalizedText, Charset: 'UTF-8' } })
               }
             }
           };
