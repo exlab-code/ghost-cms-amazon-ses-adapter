@@ -62,6 +62,51 @@ function replaceRecipientVariables(content, recipientEmail, recipientVarsMap) {
   });
 }
 
+// Build a raw MIME email with custom headers (needed for List-Unsubscribe)
+function buildRawEmail({ from, to, subject, html, text, replyTo, listUnsubscribe, listUnsubscribePost }) {
+  const boundary = `----=_Part_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+  const lines = [];
+
+  lines.push(`From: ${from}`);
+  lines.push(`To: ${to}`);
+  lines.push(`Sender: ${from}`);
+  lines.push(`Subject: =?UTF-8?B?${Buffer.from(subject).toString('base64')}?=`);
+  lines.push('MIME-Version: 1.0');
+  lines.push('Auto-Submitted: auto-generated');
+  lines.push('X-Auto-Response-Suppress: OOF, AutoReply');
+  if (replyTo) lines.push(`Reply-To: ${replyTo}`);
+  if (listUnsubscribe) lines.push(`List-Unsubscribe: ${listUnsubscribe}`);
+  if (listUnsubscribePost) lines.push(`List-Unsubscribe-Post: ${listUnsubscribePost}`);
+
+  if (html && text) {
+    lines.push(`Content-Type: multipart/alternative; boundary="${boundary}"`);
+    lines.push('');
+    lines.push(`--${boundary}`);
+    lines.push('Content-Type: text/plain; charset=UTF-8');
+    lines.push('Content-Transfer-Encoding: base64');
+    lines.push('');
+    lines.push(Buffer.from(text).toString('base64'));
+    lines.push(`--${boundary}`);
+    lines.push('Content-Type: text/html; charset=UTF-8');
+    lines.push('Content-Transfer-Encoding: base64');
+    lines.push('');
+    lines.push(Buffer.from(html).toString('base64'));
+    lines.push(`--${boundary}--`);
+  } else if (html) {
+    lines.push('Content-Type: text/html; charset=UTF-8');
+    lines.push('Content-Transfer-Encoding: base64');
+    lines.push('');
+    lines.push(Buffer.from(html).toString('base64'));
+  } else {
+    lines.push('Content-Type: text/plain; charset=UTF-8');
+    lines.push('Content-Transfer-Encoding: base64');
+    lines.push('');
+    lines.push(Buffer.from(text || '').toString('base64'));
+  }
+
+  return lines.join('\r\n');
+}
+
 // Handle email sending endpoint
 app.post('/v3/:domain/messages', upload.any(), async (req, res) => {
   log('normal', `====== Received newsletter sending request [${new Date().toISOString()}] ======`);
@@ -145,13 +190,13 @@ app.post('/v3/:domain/messages', upload.any(), async (req, res) => {
         }
       };
       
-      // Add optional ReplyTo if available in headers
-      if (req.body['h:Reply-To']) {
-        params.ReplyToAddresses = [req.body['h:Reply-To']];
-      }
-      
+      // Extract optional headers from Ghost's Mailgun-format request
+      const replyTo = req.body['h:Reply-To'] || null;
+      const listUnsubscribe = req.body['h:List-Unsubscribe'] || null;
+      const listUnsubscribePost = req.body['h:List-Unsubscribe-Post'] || null;
+
       try {
-        // Use individual sendEmail calls for maximum privacy and compatibility
+        // Use individual sendRawEmail calls for maximum privacy and custom header support
         const batchResults = [];
         for (const destination of destinations) {
           const recipientEmail = destination.Destination.ToAddresses[0];
@@ -167,24 +212,28 @@ app.post('/v3/:domain/messages', upload.any(), async (req, res) => {
             ? replaceRecipientVariables(params.TemplateContent.Text.Data, recipientEmail, recipientVarsMap)
             : null;
 
-          const emailParams = {
-            Source: senderEmail,
-            Destination: destination.Destination,
-            Message: {
-              Subject: { Data: personalizedSubject, Charset: 'UTF-8' },
-              Body: {
-                ...(personalizedHtml && { Html: { Data: personalizedHtml, Charset: 'UTF-8' } }),
-                ...(personalizedText && { Text: { Data: personalizedText, Charset: 'UTF-8' } })
-              }
-            }
-          };
-          
-          if (params.ReplyToAddresses) {
-            emailParams.ReplyToAddresses = params.ReplyToAddresses;
-          }
-          
+          // Substitute recipient variables in List-Unsubscribe header too
+          const personalizedListUnsub = replaceRecipientVariables(
+            listUnsubscribe, recipientEmail, recipientVarsMap
+          );
+
+          const rawMessage = buildRawEmail({
+            from: senderEmail,
+            to: recipientEmail,
+            subject: personalizedSubject,
+            html: personalizedHtml,
+            text: personalizedText,
+            replyTo,
+            listUnsubscribe: personalizedListUnsub,
+            listUnsubscribePost
+          });
+
           try {
-            const emailResult = await ses.sendEmail(emailParams).promise();
+            const emailResult = await ses.sendRawEmail({
+              Source: senderEmail,
+              Destinations: [recipientEmail],
+              RawMessage: { Data: rawMessage }
+            }).promise();
             batchResults.push({ MessageId: emailResult.MessageId });
           } catch (emailError) {
             batchResults.push({ Error: emailError.message });
